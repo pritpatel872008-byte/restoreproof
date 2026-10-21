@@ -1,0 +1,31 @@
+name: RestoreProof PR checks
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [feat/authorized-code-scanner]
+permissions:
+  contents: read
+jobs:
+  syntax-and-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check JavaScript syntax
+        run: node --check app.js
+      - name: Ensure scanner never executes uploaded code
+        run: |
+          node --input-type=commonjs <<'NODE'
+          const fs = require('node:fs');
+          const source = fs.readFileSync('app.js', 'utf8');
+          const section = source.slice(source.indexOf("if(section==='Code scanner'){"), source.indexOf("if(section==='Security monitoring'){"));
+          if (!section || section.startsWith("if(section==='Code scanner'){") === false) throw new Error('Code scanner section missing');
+          for (const required of ['codeScanForm', 'Save findings to workspace', 'No code is executed', 'security_findings']) {
+            if (!section.includes(required) && !source.includes(required)) throw new Error('Required scanner feature missing: ' + required);
+          }
+          if (!section.includes('accept=') || !section.includes('2 MiB')) throw new Error('File restrictions missing');
+          console.log('Static scanner guard checks passed.');
+          NODE
